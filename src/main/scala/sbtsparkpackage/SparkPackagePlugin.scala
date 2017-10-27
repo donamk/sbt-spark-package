@@ -90,7 +90,7 @@ object SparkPackagePlugin extends AutoPlugin {
 
   // spark-streaming-kafka and spark-ganglia are not included in the spark-assembly, therefore it
   // should be okay to not mark those as provided.
-  val nonProvided = Seq("spark-streaming-", "spark-ganglia")
+  val nonProvided = Seq("spark-streaming-", "spark-ganglia", "spark-sql-kafka")
 
   val validatePackaging = Def.task {
     // Make sure Spark configuration is "provided"

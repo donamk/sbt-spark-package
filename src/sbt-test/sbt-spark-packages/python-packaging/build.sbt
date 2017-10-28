@@ -8,25 +8,25 @@ name := "python-packaging"
 
 organization := "awesome.test"
 
-TaskKey[Unit]("checkZip") <<= (target) map { (target) =>
+TaskKey[Unit]("checkZip") := {
   IO.withTemporaryDirectory { dir =>
-    IO.unzip(target / "python-packaging-0.1.zip", dir)
+    IO.unzip(target.value / "python-packaging-0.1.zip", dir)
     mustExist(dir / "python-packaging-0.1.jar")
     jarContentChecks(dir / "python-packaging-0.1.jar", true)
     validatePom(dir / "python-packaging-0.1.pom", "test", "python-packaging")
   }
 }
 
-TaskKey[Unit]("checkAssemblyJar") <<= (crossTarget) map { (crossTarget) =>
+TaskKey[Unit]("checkAssemblyJar") := {
   IO.withTemporaryDirectory { dir =>
-    jarContentChecks(crossTarget / "python-packaging-assembly-0.1.jar", true)
+    jarContentChecks(crossTarget.value / "python-packaging-assembly-0.1.jar", true)
   }
 }
 
-TaskKey[Unit]("checkBinJar") <<= (crossTarget) map { (crossTarget) =>
+TaskKey[Unit]("checkBinJar") := {
   IO.withTemporaryDirectory { dir =>
-    jarContentChecks(crossTarget / "python-packaging_2.10-0.1.jar", false)
-    validatePom(crossTarget / "python-packaging_2.10-0.1.pom", "awesome.test", "python-packaging_2.10")
+    jarContentChecks(crossTarget.value / "python-packaging_2.10-0.1.jar", false)
+    validatePom(crossTarget.value / "python-packaging_2.10-0.1.pom", "awesome.test", "python-packaging_2.10")
   }
 }
 

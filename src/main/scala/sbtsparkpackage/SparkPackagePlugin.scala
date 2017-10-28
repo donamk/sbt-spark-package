@@ -342,8 +342,8 @@ object SparkPackagePlugin extends AutoPlugin {
         println(s"\nZip File created at: $zipFile\n")
         zipFile
       },
-      spPublish <<= makeReleaseCall(spDist),
-      spRegister <<= makeRegisterCall,
+      spPublish := { makeReleaseCall(spDist).value },
+      spRegister := { makeRegisterCall.value },
       initialCommands in console := getInitialCommandsForConsole.value,
       cleanupCommands in console := "sc.stop()",
       spShade := false
@@ -370,11 +370,11 @@ object SparkPackagePlugin extends AutoPlugin {
     publishLocalConfiguration in spPublishLocal := Classpaths.publishConfig(
       packagedArtifacts.in(spPublishLocal).value, Some(deliverLocal.value),
       checksums.in(publishLocal).value, logging = ivyLoggingLevel.value),
-    packagedArtifacts in spPublishLocal <<= Classpaths.packaged(spArtifactTasks),
+    packagedArtifacts in spPublishLocal := { Classpaths.packaged(spArtifactTasks).value },
     packagedArtifact in spMakePom := ((artifact in spMakePom).value, spMakePom.value),
-    artifacts <<= Classpaths.artifactDefs(spArtifactTasks),
-    deliverLocal in spPublishLocal <<= spDeliverTask(deliverLocalConfiguration),
-    spPublishLocal <<= spPublishTask(publishLocalConfiguration in spPublishLocal, deliverLocal in spPublishLocal),
+    artifacts := { Classpaths.artifactDefs(spArtifactTasks).value },
+    deliverLocal in spPublishLocal := { spDeliverTask(deliverLocalConfiguration).value },
+    spPublishLocal := { spPublishTask(publishLocalConfiguration in spPublishLocal, deliverLocal in spPublishLocal).value },
     moduleSettings in spPublishLocal := new InlineConfiguration(spProjectID.value,
       projectInfo.value, allDependencies.value, dependencyOverrides.value, ivyXML.value,
       ivyConfigurations.value, defaultConfiguration.value, ivyScala.value, ivyValidate.value,

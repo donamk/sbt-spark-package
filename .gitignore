@@ -19,3 +19,6 @@ project/plugins/project/
 # IntelliJ
 *.iml
 .idea/
+
+# vim
+*.swp

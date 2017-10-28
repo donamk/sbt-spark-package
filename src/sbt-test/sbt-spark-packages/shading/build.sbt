@@ -40,7 +40,7 @@ def validatePom(file: File, groupId: String, artifactId: String, dependencies: S
     val exists = pomDependencies.exists { dependency =>
       (dependency \ "dependency" \ "artifactId").text == artifact
     }
-    assert(exists == shouldExist, s"Exists: $exists, shouldExist: $shouldExist. $pomDependencies")
+    assert(exists == shouldExist, s"Artifact: $artifact Exists: $exists, shouldExist: $shouldExist. $pomDependencies")
   }
 }
 def mustContain(f: File, l: Seq[String]): Unit = {

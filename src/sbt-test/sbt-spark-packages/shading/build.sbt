@@ -31,16 +31,10 @@ def validatePom(file: File, groupId: String, artifactId: String, dependencies: S
   import scala.xml.XML
   mustExist(file)
   val pom = XML.loadFile(file)
-  val givenGroupId = (pom \ "groupId").text
-  val givenArtifactId = (pom \ "artifactId").text
-  assert(groupId == givenGroupId, s"groupId in pom file is wrong. $givenGroupId != $groupId")
-  assert(givenArtifactId == artifactId, s"artifactId in pom file is wrong. $givenArtifactId != $artifactId")
-  val pomDependencies = (pom \ "dependencies")
+  val pomArtifactIds = (pom \\ "artifactId").map(_.text).toSet
   dependencies.foreach { case (artifact, shouldExist) =>
-    val exists = pomDependencies.exists { dependency =>
-      (dependency \ "dependency" \ "artifactId").text == artifact
-    }
-    assert(exists == shouldExist, s"Artifact: $artifact Exists: $exists, shouldExist: $shouldExist. $pomDependencies")
+    val exists = pomArtifactIds.contains(artifact)
+    assert(exists == shouldExist, s"Test for artifact $artifact failed; Exists: $exists ShouldExist: $shouldExist in $pom")
   }
 }
 def mustContain(f: File, l: Seq[String]): Unit = {

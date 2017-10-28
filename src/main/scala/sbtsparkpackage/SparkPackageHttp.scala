@@ -8,6 +8,7 @@ import org.apache.commons.codec.binary.Base64
 import SparkPackagePlugin.autoImport._
 import SparkPackagePlugin._
 import java.io.{BufferedInputStream, FileInputStream, InputStream}
+import scala.sys.process._
 
 object SparkPackageHttp {
 
@@ -57,7 +58,7 @@ object SparkPackageHttp {
     assert(credentials.value.nonEmpty, "Please provide your credentials in your build.sbt file")
     val licenseId: Int = licenses.value.map { case (licenseName, _) =>
       licenseMap.getOrElse(licenseName, baseLicenseMap.size)
-    }.reduce((a, b) => math.min(a, b))
+    }.min
     if (licenseId == baseLicenseMap.size) {
       Def.task {
         println("Your license could not be resolved. Are you sure your license name is in the " +
@@ -67,33 +68,31 @@ object SparkPackageHttp {
       }
     } else {
       Def.task {
-        val git_commit_sha1 = { "git rev-parse HEAD" !!}.trim()
+        val git_commit_sha1 = { "git rev-parse HEAD".!! }.trim()
         val archive = dist.value
         val releaseVersion = packageVersion.value
         var params = Seq("git_commit_sha1" -> git_commit_sha1, "version" -> releaseVersion,
           "license_id" -> licenseId.toString, "name" -> spName.value)
+        val mrId = ivyModule.value.moduleDescriptor(streams.value.log).getModuleRevisionId
         if (spIncludeMaven.value) {
-          val mrId = ivyModule.value.moduleDescriptor(streams.value.log).getModuleRevisionId
           params ++= Seq("maven_coordinate" -> s"${mrId.getOrganisation}:${mrId.getName}")
         }
         def url = Seq("https:/", SPARK_PACKAGES_HOST, "api", "submit-release").mkString("/")
         
         val fileBytes = new Array[Byte](archive.length.toInt)
+        var input: InputStream = null
         try {
-          var input: InputStream = null
-          try {
-            var totalBytesRead = 0
-            input = new BufferedInputStream(new FileInputStream(archive))
-            while(totalBytesRead < fileBytes.length){
-              val bytesRemaining = fileBytes.length - totalBytesRead
-              val bytesRead = input.read(fileBytes, totalBytesRead, bytesRemaining)
-              if (bytesRead > 0){
-                totalBytesRead = totalBytesRead + bytesRead
-              }
+          var totalBytesRead = 0
+          input = new BufferedInputStream(new FileInputStream(archive))
+          while(totalBytesRead < fileBytes.length){
+            val bytesRemaining = fileBytes.length - totalBytesRead
+            val bytesRead = input.read(fileBytes, totalBytesRead, bytesRemaining)
+            if (bytesRead > 0){
+              totalBytesRead = totalBytesRead + bytesRead
             }
-          } finally {
-            input.close()
           }
+        } finally {
+          input.close()
         }
         val auth = getAuth(credentials.value)
 

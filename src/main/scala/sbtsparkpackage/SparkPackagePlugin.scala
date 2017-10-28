@@ -1,18 +1,22 @@
 package sbtsparkpackage
 
 import java.util.Locale
-
 import sbt.Package.ManifestAttributes
-import sbt._
+import sbt.{Def, _}
 import Keys._
+
 import Path.relativeTo
 import sbtassembly.AssemblyPlugin
 import sbtassembly.MappingSet
 import sbtassembly.AssemblyKeys.{assembledMappings, assembly}
+
 import scala.io.Source._
 import scala.xml.{Elem, Node, NodeBuffer, NodeSeq, Null, Text, TopScope}
-import java.io.{File => JavaFile}
+import java.io.{File ⇒ JavaFile}
 import SparkPackageHttp._
+
+import scala.sys.process._
+import sbt.internal.librarymanagement._
 
 object SparkPackagePlugin extends AutoPlugin {
 
@@ -57,7 +61,7 @@ object SparkPackagePlugin extends AutoPlugin {
       "as \"provided\" or not.")
 
     val defaultSPSettings = Seq(
-      sparkVersion := "1.4.0",
+      sparkVersion := "2.2.0",
       sparkComponents := Seq.empty[String],
       spName := sys.error("Please set your Spark Package name using spName."),
       spDependencies := Seq.empty[String],
@@ -95,7 +99,7 @@ object SparkPackagePlugin extends AutoPlugin {
   val validatePackaging = Def.task {
     // Make sure Spark configuration is "provided"
     libraryDependencies.value.map { dep =>
-      if (dep.organization == "org.apache.spark" && dep.configurations != Some("provided") &&
+      if (dep.organization == "org.apache.spark" && !dep.configurations.contains("provided") &&
         !spIgnoreProvided.value) {
         var ignore = false
         for (comp <- nonProvided) {
@@ -120,7 +124,8 @@ object SparkPackagePlugin extends AutoPlugin {
     }.reduce(_ && _)
   }
 
-  def normalizeName(s: String) = s.toLowerCase(Locale.ENGLISH).replaceAll( """\W+""", "-")
+  def normalizeName(s: String): String =
+    s.toLowerCase(Locale.ENGLISH).replaceAll( """\W+""", "-")
 
   def validateReturnSPDep(line: String): (String, String, String) = {
     val firstSplit = line.split("==")
@@ -183,7 +188,7 @@ object SparkPackagePlugin extends AutoPlugin {
         val pythonReq = if (pythonReqPath.exists()) Seq(pythonReqPath) else Seq()
         // Compile the python files
         if (pythonBase.exists()) {
-          s"python -m compileall ${pythonBase}" !
+          s"python -m compileall $pythonBase".!
         }
         val pythonExcludeDirs = pythonBase / "lib" :: pythonBase / "doc" :: pythonBase / "bin" :: Nil
         val pythonFiles = listFilesRecursively(pythonBase)
@@ -236,14 +241,23 @@ object SparkPackagePlugin extends AutoPlugin {
   def spPackageKeys = Seq(spPackage)
   lazy val spPackages: Seq[TaskKey[File]] =
     for(task <- spPackageKeys; conf <- Seq(Compile, Test)) yield (task in conf)
+
   lazy val spArtifactTasks: Seq[TaskKey[File]] = spMakePom +: spPackages
 
-  def spDeliverTask(config: TaskKey[DeliverConfiguration]) =
-    (ivyModule in spDist, config, update, streams) map { (module, config, _, s) => IvyActions.deliver(module, config, s.log) }
-  def spPublishTask(config: TaskKey[PublishConfiguration], deliverKey: TaskKey[_]) =
-    (ivyModule in spDist, config, streams) map { (module, config, s) =>
-      IvyActions.publish(module, config, s.log)
-    } tag(Tags.Publish, Tags.Network)
+  def spDeliverTask(config: TaskKey[PublishConfiguration]): Def.Initialize[Task[JavaFile]] = Def.task {
+    val module = (ivyModule in spDist).value
+    val _ = update.value
+    val conf = config.value
+    val s = streams.value
+    IvyActions.deliver(module, conf, s.log)
+  }
+
+  def spPublishTask(config: TaskKey[PublishConfiguration], deliverKey: TaskKey[_]): Def.Initialize[Task[Unit]] = Def.task {
+    val module = (ivyModule in spDist).value
+    val conf = config.value
+    val s = streams.value
+    IvyActions.publish(module, conf, s.log)
+  } tag(Tags.Publish, Tags.Network)
 
   private def getInitialCommandsForConsole: Def.Initialize[String] = Def.settingDyn {
     val base = """ println("Welcome to\n" +
@@ -256,7 +270,7 @@ object SparkPackagePlugin extends AutoPlugin {
       |
       |import org.apache.spark.SparkContext._
       |
-      |val sc = {
+      |implicit val sc = {
       |  val conf = new org.apache.spark.SparkConf()
       |    .setMaster("local")
       |    .setAppName("Sbt console + Spark!")
@@ -297,7 +311,7 @@ object SparkPackagePlugin extends AutoPlugin {
       // add any Spark dependencies
       libraryDependencies ++= {
         val sparkComponentSet = sparkComponents.value.toSet
-        if (sparkComponentSet.size == 0) {
+        if (sparkComponentSet.isEmpty) {
           Seq("org.apache.spark" %% s"spark-core" % sparkVersion.value % "provided")
         } else {
           sparkComponentSet.map { component =>
@@ -321,14 +335,14 @@ object SparkPackagePlugin extends AutoPlugin {
         (mappings in (Compile, packageBin)).value ++ listPythonFiles.value ++ listRSource.value
       },
       assembledMappings in assembly := (assembledMappings in assembly).value ++ Seq(
-        new MappingSet(None, listPythonFiles.value.toVector),
-        new MappingSet(None, listRSource.value.toVector)),
+        MappingSet(None, listPythonFiles.value.toVector),
+        MappingSet(None, listRSource.value.toVector)),
       packageOptions += ManifestAttributes(
-        ("Spark-HasRPackage", (listRSource.value.length > 0).toString)),
+        ("Spark-HasRPackage", listRSource.value.nonEmpty.toString)),
       spMakePom := {
         val config = makePomConfiguration.value
-        IvyActions.makePom((ivyModule in spDist).value, config, streams.value.log)
-        config.file
+        IvyActions.makePomFile((ivyModule in spDist).value, config, streams.value.log)
+        config.file.getOrElse(sys.error("Failed to make pom.xml"))
       },
       spDist := {
         val spArtifactName = spBaseArtifactName(spName.value, packageVersion.value)
@@ -342,8 +356,8 @@ object SparkPackagePlugin extends AutoPlugin {
         println(s"\nZip File created at: $zipFile\n")
         zipFile
       },
-      spPublish <<= makeReleaseCall(spDist),
-      spRegister <<= makeRegisterCall,
+      spPublish := { makeReleaseCall(spDist).value },
+      spRegister := { makeRegisterCall().value },
       initialCommands in console := getInitialCommandsForConsole.value,
       cleanupCommands in console := "sc.stop()",
       spShade := false
@@ -367,18 +381,38 @@ object SparkPackagePlugin extends AutoPlugin {
   }
 
   lazy val spPublishingSettings: Seq[Setting[_]] = Seq(
-    publishLocalConfiguration in spPublishLocal := Classpaths.publishConfig(
-      packagedArtifacts.in(spPublishLocal).value, Some(deliverLocal.value),
-      checksums.in(publishLocal).value, logging = ivyLoggingLevel.value),
-    packagedArtifacts in spPublishLocal <<= Classpaths.packaged(spArtifactTasks),
+    publishLocalConfiguration in spPublishLocal := {
+      val artifacts = packagedArtifacts.in(spPublishLocal).value
+      Classpaths.publishConfig(
+        publishMavenStyle.value,
+        Classpaths.deliverPattern(deliverLocal.value),
+        if (isSnapshot.value) "integration" else "release",
+        ivyConfigurations.value.map(c => ConfigRef(c.name)).toVector,
+        artifacts.toVector,
+        checksums.in(publishLocal).value.toVector
+      )
+    },
+    packagedArtifacts in spPublishLocal := { Classpaths.packaged(spArtifactTasks).value },
     packagedArtifact in spMakePom := ((artifact in spMakePom).value, spMakePom.value),
-    artifacts <<= Classpaths.artifactDefs(spArtifactTasks),
-    deliverLocal in spPublishLocal <<= spDeliverTask(deliverLocalConfiguration),
-    spPublishLocal <<= spPublishTask(publishLocalConfiguration in spPublishLocal, deliverLocal in spPublishLocal),
-    moduleSettings in spPublishLocal := new InlineConfiguration(spProjectID.value,
-      projectInfo.value, allDependencies.value, dependencyOverrides.value, ivyXML.value,
-      ivyConfigurations.value, defaultConfiguration.value, ivyScala.value, ivyValidate.value,
-      conflictManager.value),
-    ivyModule in spDist := { val is = ivySbt.value; new is.Module((moduleSettings in spPublishLocal).value) }
+    artifacts := { Classpaths.artifactDefs(spArtifactTasks).value },
+    deliverLocal in spPublishLocal := spDeliverTask(publishLocalConfiguration).value,
+    spPublishLocal := spPublishTask(
+      publishLocalConfiguration in spPublishLocal,
+      deliverLocal in spPublishLocal
+    ).value,
+    moduleSettings in spPublishLocal := InlineConfiguration(
+      spProjectID.value, projectInfo.value)
+      .withDependencies(allDependencies.value.toVector)
+      .withOverrides(dependencyOverrides.value.toVector)
+      .withIvyXML(ivyXML.value)
+      .withConfigurations(ivyConfigurations.value.toVector)
+      .withDefaultConfiguration(defaultConfiguration.value)
+      .withScalaModuleInfo(scalaModuleInfo.value)
+      .withValidate(ivyValidate.value)
+      .withConflictManager(conflictManager.value),
+    ivyModule in spDist := {
+      val is = ivySbt.value
+      new is.Module((moduleSettings in spPublishLocal).value)
+    }
   )
 }

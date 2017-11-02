@@ -10,11 +10,6 @@ lazy val nonShadedDependencies = Seq(
   ModuleID("org.apache.commons", "commons-proxy", "1.0")
 )
 
-lazy val root = project.in(file("."))
-  .settings(commonSettings)
-  .aggregate(shade, distribute)
-
-
 lazy val shade = Project("shaded", file("."))
   .settings(commonSettings)
   .settings(
@@ -27,16 +22,16 @@ lazy val shade = Project("shaded", file("."))
     )
   )
 
-lazy val distribute = Project("distribution", file("."))
+lazy val distribute = Project("distribution", file("distribute"))
   .settings(commonSettings)
   .settings(
     spName := "test/shading",
-    target := target.value / "distribution",
+    target := (target in shade).value / ".." / "distribution",
     spShade := true,
-    assembly in spPackage := (assembly /*in shade*/).value,
+    assembly in spPackage := (assembly in shade).value,
     libraryDependencies ++= nonShadedDependencies,
     packageBin := {
-      val shadedJar = (assembly /*in shade*/).value
+      val shadedJar = (assembly in shade).value
       val targetJar = new File(target.value, name.value + "-" + version.value + ".jar")
       IO.move(shadedJar, targetJar)
       targetJar
@@ -44,9 +39,9 @@ lazy val distribute = Project("distribution", file("."))
   )
 
 
-TaskKey[Unit]("checkZip") := {
+TaskKey[Unit]("checkZip") in distribute := {
   IO.withTemporaryDirectory { dir =>
-    IO.unzip(target.value / "shading-0.1.zip", dir)
+    IO.unzip((target in distribute).value / "shading-0.1.zip", dir)
     mustExist(dir / "shading-0.1.jar")
     jarContentChecks(dir / "shading-0.1.jar", python = true)
     validatePom(dir / "shading-0.1.pom", "test", "shading", Seq(

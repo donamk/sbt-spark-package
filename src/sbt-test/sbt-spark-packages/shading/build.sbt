@@ -26,7 +26,7 @@ lazy val distribute = Project("distribution", file("distribute"))
   .settings(commonSettings)
   .settings(
     spName := "test/shading",
-    target := (target in shade).value / ".." / "distribution",
+    target := ((target in shade).value / ".." / "distribution").getCanonicalFile,
     spShade := true,
     assembly in spPackage := (assembly in shade).value,
     libraryDependencies ++= nonShadedDependencies,
